@@ -65,7 +65,7 @@ cat > taskdef-jenkins.json <<EOF
   "containerDefinitions": [
     {
       "name": "myapp",
-      "image": "'$IMAGE_URI'",
+      "image": "$IMAGE_URI",
       "essential": true,
       "portMappings": [
         {
