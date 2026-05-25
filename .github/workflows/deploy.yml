@@ -43,7 +43,9 @@ jobs:
 
       - name: Update Task Definition
         run: |
-          sed "s|:latest|:$IMAGE_TAG|g" taskdef.json > taskdef-updated.json
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+          jq --arg IMAGE "$IMAGE_URI" '.containerDefinitions[0].image = $IMAGE' taskdef.json > taskdef-updated.json
+          cat taskdef-updated.json
 
       - name: Register ECS Task Definition
         run: |
