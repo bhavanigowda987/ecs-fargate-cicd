@@ -10,7 +10,6 @@ env:
   ECR_REPO: myapp
   ECS_CLUSTER: myCluster-dev
   ECS_SERVICE: myService-dev
-  TASK_FAMILY: myTaskDef-dev
 
 jobs:
   build-and-deploy:
@@ -31,30 +30,49 @@ jobs:
         run: |
           aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      - name: Build Docker Image
+      - name: Build and Push Docker Image
         run: |
           IMAGE_TAG=github-${{ github.run_number }}
-          docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG .
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
-      - name: Push Docker Image
-        run: |
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
-
-      - name: Update Task Definition
-        run: |
           IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
-          jq --arg IMAGE "$IMAGE_URI" '.containerDefinitions[0].image = $IMAGE' taskdef.json > taskdef-updated.json
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Create ECS Task Definition
+        run: |
+          cat > taskdef-updated.json <<TASK
+          {
+            "family": "myTaskDef-dev",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ecsTaskExecutionRole",
+            "containerDefinitions": [
+              {
+                "name": "myapp",
+                "image": "$IMAGE_URI",
+                "essential": true,
+                "portMappings": [
+                  {
+                    "containerPort": 3000,
+                    "protocol": "tcp"
+                  }
+                ]
+              }
+            ]
+          }
+          TASK
           cat taskdef-updated.json
 
       - name: Register ECS Task Definition
         run: |
-          aws ecs register-task-definition \
-            --cli-input-json file://taskdef-updated.json
+          aws ecs register-task-definition --cli-input-json file://taskdef-updated.json
 
       - name: Deploy to ECS
         run: |
           aws ecs update-service \
             --cluster $ECS_CLUSTER \
             --service $ECS_SERVICE \
+            --task-definition myTaskDef-dev \
             --force-new-deployment
